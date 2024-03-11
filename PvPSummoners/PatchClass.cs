@@ -1,14 +1,13 @@
 ﻿using ACE.Database;
-using ACE.Server.Managers;
-using ACE.Server.Network.GameMessages.Messages;
-using ACE.Server.Physics.Common;
-using ACE.Server.Physics;
-using static ACE.Server.Physics.Common.ObjectMaint;
-using PvPSummoners.Extensions;
-
+using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Actions;
-using ACE.DatLoader.FileTypes;
+using ACE.Server.Managers;
+using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Physics;
+using ACE.Server.Physics.Common;
+using PvPSummoners.Extensions;
+using static ACE.Server.Physics.Common.ObjectMaint;
 
 namespace PvPSummoners
 {
@@ -162,7 +161,6 @@ namespace PvPSummoners
                     }
                 }
             }
-
 
             __result = new ActivationResult(true);
             return false;
@@ -334,7 +332,6 @@ namespace PvPSummoners
 
             }
 
-
             // maintain inverse for monsters / combat pets
             if (!obj.IsPlayer)
                 obj.ObjMaint.AddVisibleTargets(new List<PhysicsObj>() { __instance.PhysicsObj });
@@ -472,7 +469,6 @@ namespace PvPSummoners
                     createCorpseMethod.Invoke(player, new object[] { topDamager, hadVitae });
                 }
 
-
                 player.ThreadSafeTeleportOnDeath(); // enter portal space
 
                 if (isSummonerDeath || player.IsPKDeath(topDamager) || player.IsPKLiteDeath(topDamager))
@@ -545,9 +541,6 @@ namespace PvPSummoners
 
             return false;
         }
-
-
-
         #endregion
     }
 }

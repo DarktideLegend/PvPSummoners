@@ -1,9 +1,4 @@
 ﻿using ACE.Server.Physics.Common;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace PvPSummoners.Extensions
 {
@@ -25,7 +20,6 @@ namespace PvPSummoners.Extensions
 
         private static bool IsAllyCombatPet(CombatPet petA, CombatPet petB)
         {
-
             if (IsPetAllegianceMember(petA.P_PetOwner, petB))
                 return true;
 
@@ -33,13 +27,11 @@ namespace PvPSummoners.Extensions
                 return true;
 
             return false;
-
         }
 
         private static bool IsPetFellowshipMember(Player player, CombatPet combatPet)
         {
             return combatPet.P_PetOwner.GetFellowshipTargets().Contains(player);
-
         }
 
         private static bool IsPetAllegianceMember(Player player, CombatPet combatPet)

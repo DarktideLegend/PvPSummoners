@@ -109,4 +109,10 @@
 	<Target Name="ZipOutputPath" AfterTargets="CleanupFiles" Condition="$(ConfigurationName) == Release">
 		<ZipDirectory SourceDirectory="$(OutputPath)" DestinationFile="$(OutputPath)..\$(ProjectName).zip" Overwrite="true" />
 	</Target>
+	<ItemGroup>
+	  <EditorConfigFiles Remove="C:\Users\node_\source\repos\PvPSummoners\PvPSummoners\.editorconfig" />
+	</ItemGroup>
+	<ItemGroup>
+	  <None Include="C:\Users\node_\source\repos\PvPSummoners\PvPSummoners\.editorconfig" />
+	</ItemGroup>
 </Project>
