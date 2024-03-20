@@ -99,12 +99,6 @@ namespace PvPSummoners
         #endregion
 
         #region Patches
-        //[HarmonyPrefix]
-        //[HarmonyPatch(typeof(Creature), nameof(Creature.GetDeathMessage), new Type[] { typeof(DamageHistoryInfo), typeof(DamageType), typeof(bool) })]
-        //public static void PreDeathMessage(DamageHistoryInfo lastDamagerInfo, DamageType damageType, bool criticalHit, ref Creature __instance)
-        //{
-        //  ...
-        //}
         [HarmonyPrefix]
         [HarmonyPatch(typeof(PetDevice), nameof(PetDevice.CheckUseRequirements), new Type[] { typeof(WorldObject) })]
         public static bool PreCheckUseRequirements(WorldObject activator, ref PetDevice __instance, ref ActivationResult __result)
@@ -341,205 +335,16 @@ namespace PvPSummoners
         }
 
         [HarmonyPrefix]
-        [HarmonyPatch(typeof(Player), nameof(Player.HandlePKDeathBroadcast), new Type[] { typeof(DamageHistoryInfo), typeof(DamageHistoryInfo) })]
-        public static bool PreHandlePKDeathBroadcast(DamageHistoryInfo lastDamager, DamageHistoryInfo topDamager, ref Player __instance)
+        [HarmonyPatch(typeof(Player), nameof(Player.IsPKDeath), new Type[] { typeof(DamageHistoryInfo) })]
+        public static bool PreIsPKDeath(DamageHistoryInfo topDamager, ref Player __instance, ref bool __result)
         {
-            var isSummonerDeath = topDamager.PetOwner != null;
-
-            if ((topDamager == null || !topDamager.IsPlayer) && !isSummonerDeath)
-                return false;
-
-            var pkPlayer = topDamager.TryGetPetOwnerOrAttacker() as Player;
-            if (pkPlayer == null)
-                return false;
-
-            if (isSummonerDeath || __instance.IsPKDeath(topDamager))
+            if (topDamager.PetOwner != null && topDamager.PetOwner.TryGetTarget(out Player target))
             {
-                pkPlayer.PkTimestamp = Time.GetUnixTime();
-                pkPlayer.PlayerKillsPk++;
-
-                var globalPKDe = $"{lastDamager.Name} has defeated {__instance.Name}!";
-
-                if ((__instance.Location.Cell & 0xFFFF) < 0x100)
-                    globalPKDe += $" The kill occured at {__instance.Location.GetMapCoordStr()}";
-
-
-                globalPKDe += "\n[PKDe]";
-
-                PlayerManager.BroadcastToAll(new GameMessageSystemChat(globalPKDe, ChatMessageType.Broadcast));
-            }
-            else if (__instance.IsPKLiteDeath(topDamager))
-                pkPlayer.PlayerKillsPkl++;
-
-            return false;
-        }
-
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(Player), "Die", new Type[] { typeof(DamageHistoryInfo), typeof(DamageHistoryInfo) })]
-        public static bool PreDie(DamageHistoryInfo lastDamager, DamageHistoryInfo topDamager, ref Player __instance)
-        {
-            var isSummonerDeath = topDamager.PetOwner != null;
-
-            __instance.IsInDeathProcess = true;
-
-            if (topDamager?.Guid == __instance.Guid && __instance.IsPKType)
-            {
-                var topDamagerOther = __instance.DamageHistory.GetTopDamager(false);
-
-                if (topDamagerOther != null && topDamagerOther.IsPlayer)
-                    topDamager = topDamagerOther;
-            }
-
-            __instance.UpdateVital(__instance.Health, 0);
-            __instance.NumDeaths++;
-            __instance.suicideInProgress = false;
-
-            // todo: since we are going to be using 'time since Player last died to an OlthoiPlayer'
-            // as a factor in slag generation, this will eventually be moved to after the slag generation
-
-            //if (topDamager != null && topDamager.IsOlthoiPlayer)
-            //OlthoiLootTimestamp = (int)Time.GetUnixTime();
-
-            if (__instance.CombatMode == CombatMode.Magic && __instance.MagicState.IsCasting)
-                __instance.FailCast(false);
-
-            // TODO: instead of setting IsBusy here,
-            // eventually all of the places that check for states such as IsBusy || Teleporting
-            // might want to use a common function, and IsDead should return a separate error
-            __instance.IsBusy = true;
-
-            // killer = top damager for looting rights
-            if (topDamager != null)
-                __instance.KillerId = topDamager.Guid.Full;
-
-            // broadcast death animation
-            var deathAnim = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
-            __instance.EnqueueBroadcastMotion(deathAnim);
-
-            // create network messages for player death
-            var msgHealthUpdate = new GameMessagePrivateUpdateAttribute2ndLevel(__instance, Vital.Health, 0);
-
-            // TODO: death sounds? seems to play automatically in client
-            // var msgDeathSound = new GameMessageSound(Guid, Sound.Death1, 1.0f);
-            var msgNumDeaths = new GameMessagePrivateUpdatePropertyInt(__instance, PropertyInt.NumDeaths, __instance.NumDeaths);
-
-            // send network messages for player death
-            __instance.Session.Network.EnqueueSend(msgHealthUpdate, msgNumDeaths);
-
-            if (lastDamager?.Guid == __instance.Guid) // suicide
-            {
-                var msgSelfInflictedDeath = new GameEventWeenieError(__instance.Session, WeenieError.YouKilledYourself);
-                __instance.Session.Network.EnqueueSend(msgSelfInflictedDeath);
-            }
-
-            var hadVitae = __instance.HasVitae;
-
-            // update vitae
-            // players who died in a PKLite fight do not accrue vitae
-            if (!__instance.IsPKLiteDeath(topDamager))
-                __instance.InflictVitaePenalty();
-
-            if ((isSummonerDeath || __instance.IsPKDeath(topDamager)) || __instance.AugmentationSpellsRemainPastDeath == 0)
-            {
-                var msgPurgeEnchantments = new GameEventMagicPurgeEnchantments(__instance.Session);
-                __instance.EnchantmentManager.RemoveAllEnchantments();
-                __instance.Session.Network.EnqueueSend(msgPurgeEnchantments);
-            }
-            else
-                __instance.Session.Network.EnqueueSend(new GameMessageSystemChat("Your augmentation prevents the tides of death from ripping away your current enchantments!", ChatMessageType.Broadcast));
-
-            // wait for the death animation to finish
-            var dieChain = new ActionChain();
-            var animLength = DatManager.PortalDat.ReadFromDat<MotionTable>(__instance.MotionTableId).GetAnimationLength(MotionCommand.Dead);
-            dieChain.AddDelaySeconds(animLength + 1.0f);
-
-            //resolve player
-            Player player = PlayerManager.FindByGuid(__instance.Guid) as Player;
-            if (player is null)
-                return false;
-
-            Type playerType = player.GetType();
-            MethodInfo createCorpseMethod = playerType.GetMethod("CreateCorpse", BindingFlags.NonPublic | BindingFlags.Instance);
-
-            dieChain.AddAction(__instance, () =>
-            {
-                if (createCorpseMethod != null)
-                {
-
-                    createCorpseMethod.Invoke(player, new object[] { topDamager, hadVitae });
-                }
-
-                player.ThreadSafeTeleportOnDeath(); // enter portal space
-
-                if (isSummonerDeath || player.IsPKDeath(topDamager) || player.IsPKLiteDeath(topDamager))
-                    player.SetMinimumTimeSincePK();
-
-                player.IsBusy = false;
-            });
-
-            dieChain.EnqueueChain();
-
-            return false;
-        }
-
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(Player), nameof(Player.PK_DeathTick))]
-        public static bool PrePK_DeathTick(ref Player __instance)
-        {
-            Player player = __instance;
-            Type playerType = player.GetType();
-            FieldInfo cachedHeartbeatIntervalProperty = playerType.GetField("CachedHeartbeatInterval", BindingFlags.NonPublic | BindingFlags.Instance);
-
-            if (__instance.MinimumTimeSincePk == null || (PropertyManager.GetBool("pk_server_safe_training_academy").Item && __instance.RecallsDisabled))
-                return false;
-
-            if (__instance.PkLevel == PKLevel.NPK && !PropertyManager.GetBool("pk_server").Item && !PropertyManager.GetBool("pkl_server").Item)
-            {
-                __instance.MinimumTimeSincePk = null;
+                __result = __instance.IsPKDeath(target?.Guid.Full);
                 return false;
             }
 
-            if (cachedHeartbeatIntervalProperty != null)
-            {
-                var cachedHeartbeatValue = cachedHeartbeatIntervalProperty.GetValue(player);
-                if (cachedHeartbeatValue is double val)
-                    __instance.MinimumTimeSincePk += val;
-
-            }
-
-            if (__instance.MinimumTimeSincePk < PropertyManager.GetDouble("pk_respite_timer").Item)
-                return false;
-
-            __instance.MinimumTimeSincePk = null;
-
-            var werror = WeenieError.None;
-            var pkLevel = __instance.PkLevel;
-
-            if (PropertyManager.GetBool("pk_server").Item)
-                pkLevel = PKLevel.PK;
-            else if (PropertyManager.GetBool("pkl_server").Item)
-                pkLevel = PKLevel.PKLite;
-
-            switch (pkLevel)
-            {
-                case PKLevel.NPK:
-                    return false;
-
-                case PKLevel.PK:
-                    __instance.PlayerKillerStatus = PlayerKillerStatus.PK;
-                    werror = WeenieError.YouArePKAgain;
-                    break;
-
-                case PKLevel.PKLite:
-                    __instance.PlayerKillerStatus = PlayerKillerStatus.PKLite;
-                    werror = WeenieError.YouAreNowPKLite;
-                    break;
-            }
-
-            __instance.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(__instance, PropertyInt.PlayerKillerStatus, (int)__instance.PlayerKillerStatus));
-            __instance.Session.Network.EnqueueSend(new GameEventWeenieError(__instance.Session, werror));
-
-            return false;
+            return true;
         }
         #endregion
     }
